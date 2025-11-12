@@ -11,7 +11,7 @@ if (!process.env.MONGO_URI) {
   process.exit(1);
 }
 
-// const routes = require('./index'); // <-- Updated path
+const routes = require('./src/server'); // <-- Updated path
 
 const PORT = process.env.PORT || 5000;
 
@@ -21,7 +21,7 @@ app.use(helmet()); // Security headers
 app.use(express.json());
 
 // Mount routes
-// app.use('/v1', routes);
+app.use('/v1', routes);
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -35,8 +35,8 @@ mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 }).then(() => {
-  console.log('✅ MongoDB connected');
-  app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+  console.log('connected to db');
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }).catch(err => {
   console.error('❌ MongoDB connection error:', err);
   process.exit(1);
