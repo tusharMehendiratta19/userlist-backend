@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Location = require('../models/Location');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
@@ -10,7 +11,7 @@ exports.register = async (req, res) => {
         if (existingUser) {
             return res.status(400).json({ message: 'User already exists' });
         }
-        if (!firstName || !lastName || !gender || !email || !password || !city || !state || !zipcode || !country || !interest) {
+        if (!firstName || !gender || !email || !password || !city || !state || !zipcode || !country || !interest) {
             return res.status(400).json({ message: 'All fields are required' });
         }
         let hashedPassword = await bcrypt.hash(password, 10);
@@ -24,8 +25,28 @@ exports.register = async (req, res) => {
             let refreshToken = jwt.sign({ id: newUser._id }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
             newUser.refreshToken = refreshToken;
             await newUser.save();
+
+            res.cookie('token', token, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'Strict',
+                maxAge: 60 * 60 * 1000,
+            });
+
+            res.cookie('refreshToken', refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'Strict',
+                maxAge: 7 * 24 * 60 * 60 * 1000,
+            });
+
+            res.cookie('custId', newUser._id.toString(), {
+                sameSite: 'Strict',
+                maxAge: 7 * 24 * 60 * 60 * 1000,
+            });
+
             res.setHeader('Authorization', `Bearer ${token}`);
-            res.status(201).json({ message: 'User registered successfully', userId: newUser._id, token, refreshToken });
+            res.status(201).json({ message: 'User registered successfully', userId: newUser._id, name: `${newUser.firstName} ${newUser.lastName}`, token, refreshToken });
         }
     } catch (error) {
         console.error("Error in user registration: ", error);
@@ -49,10 +70,10 @@ exports.getUserData = async (req, res) => {
 exports.getAllUsers = async (req, res) => {
     try {
         let skip = req.query.skip ? parseInt(req.query.skip, 10) : 0;
-        // let limit = req.query.limit ? parseInt(req.query.limit, 10) : 0;
+        let limit = req.query.limit ? parseInt(req.query.limit, 10) : 0;
         const users = await User.find({}, '-password -refreshToken')
             .skip(skip)
-            .limit(10);
+            .limit(limit);
         const total = await User.countDocuments();
         res.status(200).json({ total, users });
     } catch (error) {
@@ -99,6 +120,16 @@ exports.deleteUser = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
         res.status(200).json({ message: 'User deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+}
+
+exports.getLocations = async (req, res) => {
+    try {
+        const locations = await Location.find({}).lean();
+        console.log("Fetched locations: ", locations);
+        res.status(200).json({ locations });
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
     }

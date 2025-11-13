@@ -8,6 +8,7 @@ router.get('/getUserData/:id', verifyToken, userController.getUserData);
 router.get('/getAllUsers', verifyToken, userController.getAllUsers);
 router.post('/updateUser', verifyToken, userController.updateUser);
 router.delete('/deleteUser/:id', verifyToken, userController.deleteUser);
+router.get('/locations', userController.getLocations);
 
 
 module.exports = router;
