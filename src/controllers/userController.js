@@ -20,7 +20,7 @@ exports.register = async (req, res) => {
         if (!result) {
             return res.status(500).json({ message: 'Failed to register user' });
         } else {
-            console.log("New user registered: ", result);
+            // console.log("New user registered: ", result);
             let token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
             let refreshToken = jwt.sign({ id: newUser._id }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
             newUser.refreshToken = refreshToken;
@@ -128,7 +128,7 @@ exports.deleteUser = async (req, res) => {
 exports.getLocations = async (req, res) => {
     try {
         const locations = await Location.find({}).lean();
-        console.log("Fetched locations: ", locations);
+        // console.log("Fetched locations: ", locations);
         res.status(200).json({ locations });
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
