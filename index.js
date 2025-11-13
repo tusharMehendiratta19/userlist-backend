@@ -3,22 +3,25 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
 const app = express();
 
-// Validate environment variables
 if (!process.env.MONGO_URI) {
   console.error('❌ MONGO_URI not found in .env');
   process.exit(1);
 }
 
-const routes = require('./src/server'); // <-- Updated path
-
+const routes = require('./src/server');
 const PORT = process.env.PORT || 5000;
 
-// Global middlewares
-app.use(cors());
-app.use(helmet()); // Security headers
+app.use(cors({
+  origin: "http://localhost:3000",
+  credentials: true, // must be true to allow cookies from frontend
+}));
+
+app.use(helmet());
 app.use(express.json());
+app.use(cookieParser()); // 👈 needed to read cookies
 
 // Mount routes
 app.use('/v1', routes);
@@ -29,8 +32,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Something went wrong', error: err.message });
 });
 
-console.log("db url: ", process.env.MONGO_URI)
-// Connect to MongoDB and start the server
+console.log("db url: ", process.env.MONGO_URI);
+
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true

@@ -49,10 +49,10 @@ exports.getUserData = async (req, res) => {
 exports.getAllUsers = async (req, res) => {
     try {
         let skip = req.query.skip ? parseInt(req.query.skip, 10) : 0;
-        let limit = req.query.limit ? parseInt(req.query.limit, 10) : 0;
+        // let limit = req.query.limit ? parseInt(req.query.limit, 10) : 0;
         const users = await User.find({}, '-password -refreshToken')
             .skip(skip)
-            .limit(limit);
+            .limit(10);
         const total = await User.countDocuments();
         res.status(200).json({ total, users });
     } catch (error) {
