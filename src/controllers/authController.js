@@ -17,31 +17,32 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'Incorrect password' });
         }
 
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-        const refreshToken = jwt.sign({ id: user._id }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
+        const accessToken = jwt.sign(
+            { userId: user._id, email: user.email },
+            process.env.JWT_SECRET,
+            { expiresIn: "1hr" }
+        );
 
-        user.refreshToken = refreshToken;
-        await user.save();
+        const refreshToken = jwt.sign(
+            { userId: user._id, email: user.email },
+            process.env.JWT_REFRESH_SECRET,
+            { expiresIn: "7d" }
+        );
 
-        // Set HTTP-only cookies
-        res.cookie('token', token, {
+        res.cookie("token", accessToken, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'Strict',
-            maxAge: 60 * 60 * 1000,
+            secure: true,
+            sameSite: "strict"
         });
 
-        res.cookie('refreshToken', refreshToken, {
+        res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'Strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+            secure: true,
+            sameSite: "strict"
         });
 
-        res.cookie('custId', user._id.toString(), {
-            sameSite: 'Strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-        });
+        // user.refreshToken = refreshToken;
+        // await user.save();
 
         res.status(200).json({ message: 'Login successful', userId: user._id, userName: user.firstName + ' ' + user.lastName });
     } catch (error) {
@@ -57,7 +58,29 @@ exports.changePassword = async (req, res) => {
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
-        let hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        user.passwordArray = user.passwordArray || [];
+
+        for (const oldHashed of user.passwordArray) {
+            if (await bcrypt.compare(newPassword, oldHashed)) {
+                return res.status(400).json({ message: 'Cannot reuse old password' });
+            }
+        }
+
+        if (user.password && await bcrypt.compare(newPassword, user.password)) {
+            return res.status(400).json({ message: 'Cannot reuse old password' });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        if (user.password) {
+            user.passwordArray.push(user.password);
+        }
+
+        if (user.passwordArray.length > 3) {
+            user.passwordArray = user.passwordArray.slice(-3);
+        }
+
         user.password = hashedPassword;
         await user.save();
         res.status(200).json({ message: 'Password changed successfully' });

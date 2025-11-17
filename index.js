@@ -15,15 +15,15 @@ const routes = require('./src/server');
 const PORT = process.env.PORT || 5000;
 
 app.use(cors({
-  origin: "http://localhost:3000",
-  credentials: true, // must be true to allow cookies from frontend
+  origin: process.env.cors_origin,
+  credentials: true,
 }));
 
 app.use(helmet());
 app.use(express.json());
-app.use(cookieParser()); // 👈 needed to read cookies
+app.use(cookieParser());
+app.use("/uploads", express.static("uploads"));
 
-// Mount routes
 app.use('/v1', routes);
 
 // Global error handler

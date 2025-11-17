@@ -6,53 +6,76 @@ require('dotenv').config();
 
 exports.register = async (req, res) => {
     const { firstName, lastName, gender, email, password, city, state, zipcode, country, interest } = req.body;
+
     try {
         const existingUser = await User.findOne({ email });
         if (existingUser) {
             return res.status(400).json({ message: 'User already exists' });
         }
+
         if (!firstName || !gender || !email || !password || !city || !state || !zipcode || !country || !interest) {
             return res.status(400).json({ message: 'All fields are required' });
         }
-        let hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = new User({ firstName, lastName, gender, email, password: hashedPassword, city, state, zipcode, country, interest });
-        let result = await newUser.save();
-        if (!result) {
-            return res.status(500).json({ message: 'Failed to register user' });
-        } else {
-            // console.log("New user registered: ", result);
-            let token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-            let refreshToken = jwt.sign({ id: newUser._id }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
-            newUser.refreshToken = refreshToken;
-            await newUser.save();
 
-            res.cookie('token', token, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'Strict',
-                maxAge: 60 * 60 * 1000,
-            });
-
-            res.cookie('refreshToken', refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'Strict',
-                maxAge: 7 * 24 * 60 * 60 * 1000,
-            });
-
-            res.cookie('custId', newUser._id.toString(), {
-                sameSite: 'Strict',
-                maxAge: 7 * 24 * 60 * 60 * 1000,
-            });
-
-            res.setHeader('Authorization', `Bearer ${token}`);
-            res.status(201).json({ message: 'User registered successfully', userId: newUser._id, name: `${newUser.firstName} ${newUser.lastName}`, token, refreshToken });
+        // File from multer
+        let profileImagePath = null;
+        if (req.file) {
+            profileImagePath = `/uploads/profileImages/${req.file.filename}`;
         }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const newUser = new User({
+            firstName,
+            lastName,
+            gender,
+            email,
+            password: hashedPassword,
+            city,
+            state,
+            zipcode,
+            country,
+            interest: JSON.parse(interest), // if frontend sends array in strings/formdata
+            profileImage: profileImagePath
+        });
+
+        await newUser.save();
+
+        // Generate tokens
+        const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        const refreshToken = jwt.sign({ id: newUser._id }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
+
+        newUser.refreshToken = refreshToken;
+        await newUser.save();
+
+        // Cookies
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'Strict',
+            maxAge: 60 * 60 * 1000
+        });
+
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'Strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000
+        });
+
+        return res.status(201).json({
+            message: "User registered successfully",
+            userId: newUser._id,
+            name: `${newUser.firstName} ${newUser.lastName}`,
+            profileImage: profileImagePath
+        });
+
     } catch (error) {
-        console.error("Error in user registration: ", error);
-        res.status(500).json({ message: 'Server error', error: error.message });
+        console.error("Error in user registration:", error);
+        return res.status(500).json({ message: "Server error", error: error.message });
     }
-}
+};
+
 
 exports.getUserData = async (req, res) => {
     const id = req.params.id;
