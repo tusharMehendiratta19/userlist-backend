@@ -23,7 +23,7 @@ exports.verifyToken = (req, res, next) => {
             const newAccessToken = jwt.sign(
                 { userId: refreshDecoded.userId, email: refreshDecoded.email },
                 process.env.JWT_SECRET,
-                { expiresIn: "15m" }
+                { expiresIn: "1h" }
             );
 
             res.cookie("token", newAccessToken, {
