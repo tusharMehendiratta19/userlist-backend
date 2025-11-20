@@ -1,23 +1,53 @@
-const User = require('../models/User');
-const Location = require('../models/Location');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-require('dotenv').config();
+const AppDataSource = require("../db");
+const userRepo = AppDataSource.getRepository("User");
+const cityRepo = AppDataSource.getRepository("City")
+const stateRepo = AppDataSource.getRepository("State")
+const countryRepo = AppDataSource.getRepository("Country")
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+require("dotenv").config();
 
 exports.register = async (req, res) => {
-    const { firstName, lastName, gender, email, password, city, state, zipcode, country, interest } = req.body;
+    const {
+        firstName,
+        lastName,
+        gender,
+        email,
+        password,
+        city,
+        state,
+        country,
+        zipcode,
+        interest
+    } = req.body;
 
     try {
-        const existingUser = await User.findOne({ email });
+        const requiredFields = {
+            firstName, gender, email, password,
+            city, state, country, zipcode, interest
+        };
+
+        for (const key in requiredFields) {
+            if (!requiredFields[key]) {
+                return res.status(400).json({ message: `${key} is required` });
+            }
+        }
+
+        const existingUser = await userRepo.findOne({ where: { email } });
         if (existingUser) {
-            return res.status(400).json({ message: 'User already exists' });
+            return res.status(400).json({ message: "User already exists" });
         }
 
-        if (!firstName || !gender || !email || !password || !city || !state || !zipcode || !country || !interest) {
-            return res.status(400).json({ message: 'All fields are required' });
+        // --- Fetch names using IDs ---
+        const countryName = await countryRepo.findOne({ where: { id: country } });
+        const stateName = await stateRepo.findOne({ where: { id: state } });
+        const cityName = await cityRepo.findOne({ where: { id: city } });
+
+        if (!countryName || !stateName || !cityName) {
+            return res.status(400).json({ message: "Invalid country/state/city ID" });
         }
 
-        // File from multer
+        // --- Handle profile image ---
         let profileImagePath = null;
         if (req.file) {
             profileImagePath = `/uploads/profileImages/${req.file.filename}`;
@@ -25,49 +55,53 @@ exports.register = async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        const newUser = new User({
+        let interestArray = interest;
+        if (typeof interest === "string") {
+            interestArray = JSON.parse(interest);
+        }
+
+        // --- Store NAMES instead of IDs ---
+        const newUser = userRepo.create({
             firstName,
             lastName,
             gender,
             email,
             password: hashedPassword,
-            city,
-            state,
+            country: countryName.name,
+            state: stateName.name,
+            city: cityName.name,
             zipcode,
-            country,
-            interest: JSON.parse(interest), // if frontend sends array in strings/formdata
+            interest: interestArray,
             profileImage: profileImagePath
         });
 
-        await newUser.save();
+        await userRepo.save(newUser);
 
-        // Generate tokens
-        const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-        const refreshToken = jwt.sign({ id: newUser._id }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ id: newUser.id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+        const refreshToken = jwt.sign({ id: newUser.id }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
 
         newUser.refreshToken = refreshToken;
-        await newUser.save();
+        await userRepo.save(newUser);
 
-        // Cookies
-        res.cookie('token', token, {
+        res.cookie("token", token, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'Strict',
-            maxAge: 60 * 60 * 1000
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "Strict",
+            maxAge: 3600000,
         });
 
-        res.cookie('refreshToken', refreshToken, {
+        res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'Strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "Strict",
+            maxAge: 7 * 24 * 3600000,
         });
 
         return res.status(201).json({
             message: "User registered successfully",
-            userId: newUser._id,
-            name: `${newUser.firstName} ${newUser.lastName}`,
-            profileImage: profileImagePath
+            userId: newUser.id,
+            name: `${newUser.firstName} ${newUser.lastName || ""}`.trim(),
+            profileImage: newUser.profileImage,
         });
 
     } catch (error) {
@@ -78,82 +112,221 @@ exports.register = async (req, res) => {
 
 
 exports.getUserData = async (req, res) => {
-    const id = req.params.id;
     try {
-        const user = await User.findOne({ _id: id }, '-password -refreshToken');
+        const user = await userRepo.findOne({
+            where: { id: req.params.id },
+            select: [
+                "id", "firstName", "lastName", "email", "gender",
+                "city", "state", "zipcode", "country", "interest",
+                "profileImage", "createdAt"
+            ]
+        });
+
         if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+            return res.status(404).json({ message: "User not found" });
         }
+
+        // console.log(user.country)
+        // console.log(user.state)
+        // console.log(user.city)
+
+        const countryId = await countryRepo.findOne({ where: { name: user.country } });
+        const stateId = await stateRepo.findOne({ where: { name: user.state } });
+        const cityId = await cityRepo.findOne({ where: { name: user.city } });
+
+        // console.log(countryId.id)
+        // console.log(stateId.id)
+        // console.log(cityId.id)
+
+        user.cityId = cityId.id
+        user.stateId = stateId.id
+        user.countryId = countryId.id
+
         res.status(200).json({ user });
+
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        res.status(500).json({ message: "Server error", error: error.message });
     }
-}
+};
+
 
 exports.getAllUsers = async (req, res) => {
     try {
-        let skip = req.query.skip ? parseInt(req.query.skip, 10) : 0;
-        let limit = req.query.limit ? parseInt(req.query.limit, 10) : 0;
-        const users = await User.find({}, '-password -refreshToken')
-            .skip(skip)
-            .limit(limit);
-        const total = await User.countDocuments();
+        const skip = req.query.skip ? parseInt(req.query.skip, 10) : 0;
+        const limit = req.query.limit ? parseInt(req.query.limit, 10) : 10;
+
+        const [users, total] = await userRepo.findAndCount({
+            skip,
+            take: limit,
+            select: [
+                "id", "firstName", "lastName", "email", "gender",
+                "city", "state", "zipcode", "country", "interest",
+                "profileImage", "createdAt"
+            ]
+        });
+
         res.status(200).json({ total, users });
+
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        res.status(500).json({ message: "Server error", error: error.message });
     }
-}
+};
+
 
 exports.updateUser = async (req, res) => {
-    const { firstName, lastName, gender, email, password, city, state, zipcode, country, interest } = req.body;
-
     try {
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+        const user = await userRepo.findOne({ where: { email: req.body.email } });
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const updateData = {};
+        const countryName = await countryRepo.findOne({ where: { id: req.body.country } });
+        const stateName = await stateRepo.findOne({ where: { id: req.body.state } });
+        const cityName = await cityRepo.findOne({ where: { id: req.body.city } });
+
+        if (!countryName || !stateName || !cityName) {
+            return res.status(400).json({ message: "Invalid country/state/city ID" });
         }
-        if (firstName) user.firstName = firstName;
-        if (lastName) user.lastName = lastName;
-        if (gender) user.gender = gender;
-        if (password) {
-            let hashedPassword = await bcrypt.hash(password, 10);
-            user.password = hashedPassword;
+
+        if (req.body.firstName) updateData.firstName = req.body.firstName;
+        if (req.body.lastName) updateData.lastName = req.body.lastName;
+        if (req.body.gender) updateData.gender = req.body.gender;
+        if (req.body.city) updateData.city = cityName.name;
+        if (req.body.state) updateData.state = stateName.name;
+        if (req.body.zipcode) updateData.zipcode = req.body.zipcode;
+        if (req.body.country) updateData.country = countryName.name;
+
+        if (req.body.interest) {
+            updateData.interest = typeof req.body.interest === "string"
+                ? JSON.parse(req.body.interest)
+                : req.body.interest;
         }
-        if (city) user.city = city;
-        if (state) user.state = state;
-        if (zipcode) user.zipcode = zipcode;
-        if (country) user.country = country;
-        if (interest) user.interest = interest;
-        let result = await user.save();
-        if (!result) {
-            return res.status(500).json({ message: 'Failed to update user' });
-        } else {
-            res.status(200).json({ message: 'User updated successfully', user: result });
+
+        if (req.body.password) {
+            updateData.password = await bcrypt.hash(req.body.password, 10);
         }
+
+        await userRepo.update({ email: req.body.email }, updateData);
+
+        const updatedUser = await userRepo.findOne({ where: { email: req.body.email } });
+
+        res.status(200).json({ message: "User updated successfully", user: updatedUser });
+
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        res.status(500).json({ message: "Server error", error: error.message });
     }
-}
+};
+
 
 exports.deleteUser = async (req, res) => {
-    const id = req.params.id;
     try {
-        const result = await User.deleteOne({ _id: id });
-        if (result.deletedCount === 0) {
-            return res.status(404).json({ message: 'User not found' });
+        const result = await userRepo.delete(req.params.id);
+
+        if (result.affected === 0) {
+            return res.status(404).json({ message: "User not found" });
         }
-        res.status(200).json({ message: 'User deleted successfully' });
+
+        res.status(200).json({ message: "User deleted successfully" });
+
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        res.status(500).json({ message: "Server error", error: error.message });
     }
-}
+};
+
 
 exports.getLocations = async (req, res) => {
     try {
-        const locations = await Location.find({}).lean();
-        // console.log("Fetched locations: ", locations);
-        res.status(200).json({ locations });
+        const countries = await countryRepo.find({
+            relations: {
+                states: {
+                    cities: true
+                }
+            },
+            order: {
+                name: "ASC",
+                states: {
+                    name: "ASC",
+                    cities: {
+                        name: "ASC"
+                    }
+                }
+            }
+        });
+
+        return res.status(200).json({ countries });
+
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        return res.status(500).json({
+            message: "Server error",
+            error: error.message
+        });
     }
-}
+};
+
+
+exports.addCountry = async (req, res) => {
+    try {
+        const { name } = req.body
+        const country = countryRepo.create({ name });
+        await countryRepo.save(country);
+        return res.status(201).json({ message: "Country added", country });
+    } catch (error) {
+        return res.status(500).json({ message: "Server error", error: error.message });
+    }
+};
+
+exports.addStates = async (req, res) => {
+    try {
+        const { countryId, states } = req.body;
+
+        if (!countryId || !Array.isArray(states) || states.length === 0) {
+            return res.status(400).json({ message: "countryId and states[] are required" });
+        }
+
+        // Build array of state objects
+        const stateEntities = states.map((stateName) =>
+            stateRepo.create({
+                name: stateName,
+                country: { id: countryId }
+            })
+        );
+
+        // Bulk insert
+        const result = await stateRepo.save(stateEntities);
+
+        return res.status(201).json({
+            message: `${result.length} states added`,
+            states: result
+        });
+
+    } catch (error) {
+        return res.status(500).json({ message: "Server error", error: error.message });
+    }
+};
+
+
+exports.addCities = async (req, res) => {
+    try {
+        const { stateId, cities } = req.body;
+
+        if (!stateId || !Array.isArray(cities) || cities.length === 0) {
+            return res.status(400).json({ message: "stateId and cities[] are required" });
+        }
+
+        const cityEntities = cities.map(name =>
+            cityRepo.create({ name, state: { id: stateId } })
+        );
+
+        await cityRepo.save(cityEntities);
+
+        return res.status(201).json({
+            message: "Cities added successfully",
+            total: cityEntities.length,
+            cities: cityEntities
+        });
+
+    } catch (error) {
+        return res.status(500).json({ message: "Server error", error: error.message });
+    }
+};
+

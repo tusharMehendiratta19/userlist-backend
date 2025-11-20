@@ -5,11 +5,14 @@ const { verifyToken } = require('../middleware/authMiddleware');
 const upload = require("../middleware/upload");
 
 router.post('/register', upload.single('profileImage'), userController.register);
-router.get('/getUserData/:id', verifyToken, userController.getUserData);
+router.get('/getUserData/:id', userController.getUserData);
 router.get('/getAllUsers', verifyToken, userController.getAllUsers);
 router.post('/updateUser', verifyToken, userController.updateUser);
 router.delete('/deleteUser/:id', verifyToken, userController.deleteUser);
 router.get('/locations', userController.getLocations);
+router.post("/country", userController.addCountry);
+router.post("/states", userController.addStates);
+router.post("/cities", userController.addCities);
 
 
 module.exports = router;
